@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0}</style>
+<title>สถิติแชร์บอล</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;700&display=swap">
+<style>
+/* layout: scoreboard on top, tabs, thumb-sized record pad; one column */
+:root{--bg:#f1f5f4;--card:#fff;--fg:#14262a;--mute:#5b7076;--line:#d3dedc;--accent:#d9620f;--on:#fff;--good:#13754a;--bad:#b3322c;--board:#10343a;--boardfg:#eef8f6;
+--body:"IBM Plex Sans Thai",system-ui,sans-serif;--num:"Barlow Condensed","IBM Plex Sans Thai",sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1719;--card:#132428;--fg:#e6f0ee;--mute:#90a8ac;--line:#28403f;--accent:#f4843a;--on:#1a0d03;--good:#4cc78d;--bad:#f0807a;--board:#06282e;--boardfg:#eef8f6;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1719;--card:#132428;--fg:#e6f0ee;--mute:#90a8ac;--line:#28403f;--accent:#f4843a;--on:#1a0d03;--good:#4cc78d;--bad:#f0807a;--board:#06282e;--boardfg:#eef8f6;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 40px}
+main{max-width:680px;margin:auto;display:flex;flex-direction:column;gap:12px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px;touch-action:manipulation}
+button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input,select{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+h1{font-size:19px;margin:0}h2{font-size:15px;margin:6px 0 0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.mute{color:var(--mute);font-size:13px}
+.board{background:var(--board);color:var(--boardfg);border-radius:14px;padding:12px;display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center}
+.board div{min-width:0;overflow-wrap:anywhere}
+.score{font:700 52px/1 var(--num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+.players{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px}
+.players button{display:flex;flex-direction:column;align-items:center;padding:6px 4px;min-width:0}
+.players b{font:700 26px/1.1 var(--num)}
+.players span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.players button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on)}
+.pad{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pad button{min-height:84px;border:2px solid var(--good);color:var(--good);font-weight:700;font-size:17px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.pad button.miss{border-color:var(--bad);color:var(--bad)}
+.pad button:active:not(:disabled){transform:scale(.97);background:var(--line)}
+.pad b{font:700 32px/1 var(--num)}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0}
+.scroll{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+th{font-size:12px;color:var(--mute);font-weight:500}
+tr.total td{font-weight:700}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--on);font-weight:700}
+.danger{color:var(--bad)}
+textarea{width:100%;height:140px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<main>
+  <div class="row"><h1 class="grow">สถิติแชร์บอล</h1><span class="mute" id="status" role="status">กำลังโหลด…</span></div>
+  <div class="row"><select id="matchSel" class="grow" aria-label="เลือกการแข่งขัน"></select><button id="newBtn">+ แมตช์ใหม่</button></div>
+  <div id="app" style="display:flex;flex-direction:column;gap:12px"></div>
+</main>
+<script>
+const KEY="chairball-v1";
+const TYPES={ps:"ส่งสำเร็จ",pm:"ส่งพลาด",sg:"ชู้ตลง",sm:"ชู้ตพลาด"};
+const HALVES=["ครึ่งแรก","ครึ่งหลัง","ต่อเวลา"];
+const uidGen=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
+let matches={},cur=null,tab="rec",team=0,sel=null,half=0,filter=-1,confirmDel=false,csvText="",xlsxMsg="";
+let col=null,dl=null;const dirty=new Set();let saving=false;
+
+function newMatch(prev){
+  const mk=(name,i)=>prev?JSON.parse(JSON.stringify(prev.teams[i])):{name,players:Array.from({length:7},(_,n)=>({id:uidGen()+n,no:String(n+1),name:""}))};
+  return {id:uidGen(),title:"",date:new Date().toLocaleDateString("sv-SE"),pts:prev?prev.pts:1,teams:[mk("ทีมเรา",0),mk("คู่แข่ง",1)],events:[],updated:Date.now()};
+}
+const M=()=>matches[cur];
+function readLocal(){try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return {}}}
+function writeLocal(){try{localStorage.setItem(KEY,JSON.stringify({matches,cur}));return true}catch(e){return false}}
+function setStatus(t){document.getElementById("status").textContent=t}
+function save(){
+  M().updated=Date.now();const ok=writeLocal();dirty.add(cur);
+  if(col)flush();else setStatus(ok?"บันทึกในเครื่องนี้":"ยังบันทึกไม่ได้ ส่งออก CSV ก่อนปิดหน้า");
+}
+async function flush(){
+  if(saving||!col)return;saving=true;setStatus("กำลังบันทึก…");
+  try{
+    while(dirty.size){
+      const id=dirty.values().next().value;dirty.delete(id);
+      try{if(matches[id])await col.doc(id).set(matches[id]);else await col.doc(id).delete();}
+      catch(e){dirty.add(id);throw e}
+    }
+    setStatus("บันทึกแล้ว");
+  }catch(e){setStatus("บันทึกออนไลน์ไม่สำเร็จ เก็บไว้ในเครื่อง")}
+  saving=false;
+}
+function tally(m,pred){const c={ps:0,pm:0,sg:0,sm:0};for(const e of m.events)if(pred(e))c[e.t]++;return c}
+const pct=(a,b)=>a+b?Math.round(a/(a+b)*100)+"%":"–";
+const label=p=>"#"+p.no+(p.name?" "+p.name:"");
+function findP(m,id){for(let i=0;i<2;i++){const p=m.teams[i].players.find(p=>p.id===id);if(p)return{p,i}}return null}
+
+function render(){
+  const m=M();
+  const ms=document.getElementById("matchSel");
+  ms.innerHTML=Object.values(matches).sort((a,b)=>b.id.localeCompare(a.id)).map(x=>`<option value="${esc(x.id)}" ${x.id===cur?"selected":""}>${esc(x.date)} · ${esc(x.title||x.teams[0].name+" พบ "+x.teams[1].name)}</option>`).join("");
+  const score=i=>tally(m,e=>e.team===i).sg*m.pts;
+  const seg=(act,items,on)=>`<div class="seg">${items.map(([v,t])=>`<button data-a="${act}" data-v="${v}" aria-pressed="${v===on}">${esc(t)}</button>`).join("")}</div>`;
+  let h=`<div class="board"><div>${esc(m.teams[0].name)}</div><div class="score">${score(0)} : ${score(1)}</div><div>${esc(m.teams[1].name)}</div></div>`;
+  h+=seg("tab",[["rec","บันทึก"],["stat","สรุปสถิติ"],["set","ตั้งค่าทีม"]],tab);
+  if(tab==="rec"){
+    const ps=m.teams[team].players;
+    if(!ps.some(p=>p.id===sel))sel=null;
+    h+=seg("half",HALVES.map((t,i)=>[i,t]),half)+seg("team",m.teams.map((t,i)=>[i,t.name]),team);
+    h+=`<div class="players">${ps.map(p=>`<button data-a="sel" data-v="${esc(p.id)}" aria-pressed="${p.id===sel}"><b>${esc(p.no)}</b><span>${esc(p.name||"ผู้เล่น")}</span></button>`).join("")}</div>`;
+    const sp=ps.find(p=>p.id===sel),c=tally(m,e=>e.p===sel);
+    h+=`<div class="mute">${sp?"กำลังบันทึกให้ "+esc(label(sp)):"แตะเลือกผู้เล่นก่อน แล้วกดผลการเล่น"}</div>`;
+    h+=`<div class="pad">${Object.entries(TYPES).map(([k,t])=>`<button data-a="ev" data-v="${k}" class="${k[1]==="m"?"miss":""}" ${sp?"":"disabled"}>${t}<b>${sp?c[k]:"–"}</b></button>`).join("")}</div>`;
+    h+=`<button data-a="undo" ${m.events.length?"":"disabled"}>↶ ย้อนรายการล่าสุด</button><h2>รายการล่าสุด</h2>`;
+    const last=m.events.slice(-10).reverse();
+    h+=last.length?`<ul>${last.map(e=>{const f=findP(m,e.p);return `<li><span class="mute">${esc(e.time)}</span><span class="grow">${esc(m.teams[e.team].name)} ${f?esc(label(f.p)):""} · ${TYPES[e.t]} <span class="mute">(${HALVES[e.h]})</span></span><button class="danger" data-a="rm" data-v="${esc(e.id)}">ลบ</button></li>`}).join("")}</ul>`:`<div class="mute">ยังไม่มีรายการ</div>`;
+  }else if(tab==="stat"){
+    h+=seg("filter",[[-1,"ทั้งเกม"],...HALVES.map((t,i)=>[i,t])],filter);
+    const inF=e=>filter<0||e.h===filter;
+    m.teams.forEach((t,i)=>{
+      const row=(n,c,cls="")=>`<tr class="${cls}"><td>${esc(n)}</td><td>${c.ps}</td><td>${c.pm}</td><td>${pct(c.ps,c.pm)}</td><td>${c.sg+c.sm}</td><td>${c.sg}</td><td>${c.sm}</td><td>${pct(c.sg,c.sm)}</td><td>${c.sg*m.pts}</td></tr>`;
+      h+=`<h2>${esc(t.name)}</h2><div class="scroll"><table><tr><th>ผู้เล่น</th><th>ส่งสำเร็จ</th><th>ส่งพลาด</th><th>% ส่ง</th><th>ชู้ต</th><th>ลง</th><th>พลาด</th><th>% ชู้ต</th><th>คะแนน</th></tr>${t.players.map(p=>row(label(p),tally(m,e=>e.p===p.id&&inF(e)))).join("")}${row("รวมทีม",tally(m,e=>e.team===i&&inF(e)),"total")}</table></div>`;
+    });
+    h+=`<button class="primary" data-a="xlsx">บันทึกเป็นไฟล์ Excel (.xlsx)</button><button data-a="csv">ส่งออกไฟล์ CSV</button>`;
+    if(xlsxMsg)h+=`<div class="mute" role="alert">${xlsxMsg}</div>`;
+    if(csvText)h+=`<div class="mute">ดาวน์โหลดในหน้านี้ไม่ได้ ให้คัดลอกข้อความนี้ไปวางในโปรแกรมตารางคำนวณ</div><textarea readonly aria-label="ข้อมูล CSV">${esc(csvText)}</textarea>`;
+  }else{
+    const inp=(f,v,l,extra="")=>`<input id="f-${f}" data-f="${f}" value="${esc(v)}" aria-label="${l}" placeholder="${l}" ${extra}>`;
+    h+=`<div class="row">${inp("title",m.title,"ชื่อรายการแข่ง",'class="grow"')}${inp("date",m.date,"วันที่",'type="date"')}</div>`;
+    h+=`<label class="row">คะแนนต่อ 1 ลูกที่ชู้ตลง ${inp("pts",m.pts,"คะแนนต่อลูก",'type="number" min="1" max="5" style="width:80px"')}</label>`;
+    m.teams.forEach((t,i)=>{
+      h+=`<h2>ทีมที่ ${i+1}</h2><div class="row">${inp("team-"+i,t.name,"ชื่อทีม",'class="grow"')}</div>`;
+      t.players.forEach(p=>{const used=m.events.some(e=>e.p===p.id);
+        h+=`<div class="row" style="flex-wrap:nowrap">${inp("no-"+p.id,p.no,"เบอร์",'style="width:64px" maxlength="3"')}${inp("name-"+p.id,p.name,"ชื่อผู้เล่น",'class="grow"')}<button class="danger" data-a="delp" data-v="${esc(p.id)}" ${used?'disabled title="มีสถิติแล้ว"':""}>ลบ</button></div>`});
+      h+=`<button data-a="addp" data-v="${i}">+ เพิ่มผู้เล่น</button>`;
+    });
+    h+=`<div class="mute">ผู้เล่นที่มีสถิติแล้วจะลบไม่ได้ แมตช์ใหม่จะใช้รายชื่อจากแมตช์ที่เปิดอยู่</div>`;
+    h+=confirmDel?`<div class="row"><span class="grow">ลบแมตช์นี้และสถิติทั้งหมด?</span><button class="danger" data-a="delyes">ลบเลย</button><button data-a="delno">ยกเลิก</button></div>`:`<button class="danger" data-a="del">ลบแมตช์นี้</button>`;
+  }
+  document.getElementById("app").innerHTML=h;
+}
+
+function makeCSV(){
+  const m=M(),q=v=>{let s=String(v);if(/^[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
+  const rows=[["วันที่","รายการ","ช่วง","ทีม","เบอร์","ชื่อ","ส่งสำเร็จ","ส่งพลาด","% ส่ง","ชู้ตทั้งหมด","ชู้ตลง","ชู้ตพลาด","% ชู้ต","คะแนน"]];
+  [-1,0,1,2].forEach(f=>{
+    if(f>=0&&!m.events.some(e=>e.h===f))return;
+    m.teams.forEach(t=>t.players.forEach(p=>{const c=tally(m,e=>e.p===p.id&&(f<0||e.h===f));
+      rows.push([m.date,m.title,f<0?"ทั้งเกม":HALVES[f],t.name,p.no,p.name,c.ps,c.pm,pct(c.ps,c.pm),c.sg+c.sm,c.sg,c.sm,pct(c.sg,c.sm),c.sg*m.pts])}));
+  });
+  return rows.map(r=>r.map(q).join(",")).join("\r\n");
+}
+function makeXLSX(){
+  const m=M(),wb=XLSX.utils.book_new();
+  const add=(name,rows,widths)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=widths.map(wch=>({wch}));XLSX.utils.book_append_sheet(wb,ws,name)};
+  [-1,0,1,2].forEach(f=>{
+    if(f>=0&&!m.events.some(e=>e.h===f))return;
+    const inF=e=>f<0||e.h===f,rows=[[m.title||"สถิติแชร์บอล",m.date],[m.teams[0].name,tally(m,e=>e.team===0&&inF(e)).sg*m.pts,m.teams[1].name,tally(m,e=>e.team===1&&inF(e)).sg*m.pts],[],
+      ["ทีม","เบอร์","ชื่อ","ส่งสำเร็จ","ส่งพลาด","% ส่ง","ชู้ตทั้งหมด","ชู้ตลง","ชู้ตพลาด","% ชู้ต","คะแนน"]];
+    const line=(a,b,c,x)=>[a,b,c,x.ps,x.pm,pct(x.ps,x.pm),x.sg+x.sm,x.sg,x.sm,pct(x.sg,x.sm),x.sg*m.pts];
+    m.teams.forEach((t,i)=>{t.players.forEach(p=>rows.push(line(t.name,p.no,p.name,tally(m,e=>e.p===p.id&&inF(e)))));rows.push(line(t.name,"","รวมทีม",tally(m,e=>e.team===i&&inF(e))))});
+    add(f<0?"ทั้งเกม":HALVES[f],rows,[18,8,18,11,10,8,12,8,10,8,8]);
+  });
+  add("รายการบันทึก",[["เวลา","ช่วง","ทีม","เบอร์","ชื่อ","ผลการเล่น"],...m.events.map(e=>{const x=findP(m,e.p);return[e.time,HALVES[e.h],m.teams[e.team].name,x?x.p.no:"",x?x.p.name:"",TYPES[e.t]]})],[8,12,18,8,18,14]);
+  return XLSX.write(wb,{bookType:"xlsx",type:"array"});
+}
+async function exportXLSX(){
+  xlsxMsg="";
+  try{
+    if(!window.XLSX)throw new Error("nolib");
+    const data=makeXLSX(),filename="chairball-"+(M().date||"match")+".xlsx";
+    if(dl)await dl.save({filename,data});
+    else if(!window.claude)saveFile(filename,[data],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    else throw new Error("nodl");
+  }catch(e){if(e.code!=="declined")xlsxMsg=window.XLSX?"บันทึกไฟล์ Excel ในหน้านี้ไม่ได้ ลองใช้ปุ่ม CSV":"โหลดตัวสร้างไฟล์ Excel ไม่ได้ ตรวจอินเทอร์เน็ตแล้วเปิดหน้านี้ใหม่"}
+  render();
+}
+function saveFile(name,parts,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(parts,{type}));a.download=name;a.click()}
+async function exportCSV(){
+  const text=makeCSV();
+  if(dl){try{await dl.save({filename:"chairball-"+(M().date||"match")+".csv",data:"﻿"+text});return}catch(e){if(e.code==="declined")return}}
+  if(!window.claude){saveFile("chairball-"+(M().date||"match")+".csv",["\ufeff"+text],"text/csv");return}
+  csvText=text;render();
+}
+
+document.getElementById("app").addEventListener("click",ev=>{
+  const b=ev.target.closest("button[data-a]");if(!b||b.disabled)return;
+  const a=b.dataset.a,v=b.dataset.v,m=M();
+  if(a==="tab"){tab=v;confirmDel=false;csvText=""}
+  else if(a==="half")half=+v;
+  else if(a==="team"){team=+v;sel=null}
+  else if(a==="filter")filter=+v;
+  else if(a==="sel")sel=v;
+  else if(a==="ev"){m.events.push({id:uidGen(),p:sel,team,t:v,h:half,time:new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})});save()}
+  else if(a==="undo"){m.events.pop();save()}
+  else if(a==="rm"){m.events=m.events.filter(e=>e.id!==v);save()}
+  else if(a==="addp"){const ps=m.teams[+v].players;ps.push({id:uidGen(),no:String(ps.length+1),name:""});save()}
+  else if(a==="delp"){m.teams.forEach(t=>t.players=t.players.filter(p=>p.id!==v));save()}
+  else if(a==="del")confirmDel=true;
+  else if(a==="delno")confirmDel=false;
+  else if(a==="delyes"){
+    const gone=cur;delete matches[gone];dirty.add(gone);
+    cur=Object.keys(matches).sort().pop();
+    if(!cur){const n=newMatch();matches[n.id]=n;cur=n.id}
+    confirmDel=false;tab="rec";sel=null;save();
+  }
+  else if(a==="csv"){exportCSV();return}
+  else if(a==="xlsx"){exportXLSX();return}
+  render();
+});
+// text fields: update state without re-rendering, so focus is kept
+document.getElementById("app").addEventListener("input",ev=>{
+  const f=ev.target.dataset.f;if(!f)return;const m=M(),v=ev.target.value,i=f.indexOf("-"),k=i<0?f:f.slice(0,i),id=f.slice(i+1);
+  if(k==="title"||k==="date")m[k]=v;
+  else if(k==="pts")m.pts=Math.max(1,parseInt(v,10)||1);
+  else if(k==="team")m.teams[+id].name=v;
+  else{const x=findP(m,id);if(x)x.p[k]=v}
+  writeLocal();dirty.add(cur);clearTimeout(window.t);window.t=setTimeout(save,700);
+});
+document.getElementById("app").addEventListener("change",ev=>{if(ev.target.dataset.f)setTimeout(()=>{if(!document.activeElement.dataset.f)render()},0)});
+document.getElementById("matchSel").addEventListener("change",e=>{if(col)flush();cur=e.target.value;sel=null;confirmDel=false;csvText="";writeLocal();render()});
+document.getElementById("newBtn").addEventListener("click",()=>{const n=newMatch(M());matches[n.id]=n;cur=n.id;sel=null;half=0;team=0;tab="set";csvText="";save();render()});
+
+const local=readLocal();matches=local.matches||{};cur=local.cur;
+if(!matches[cur])cur=Object.keys(matches).sort().pop();
+if(!cur){const n=newMatch();matches[n.id]=n;cur=n.id}
+render();setStatus("บันทึกในเครื่องนี้");
+
+(async()=>{
+  if(!window.claude?.use)return;
+  claude.use("downloads").then(d=>dl=d);
+  try{
+    const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
+    const uid=await user?.id();if(!db||!uid)return;
+    const c=db.collection("data/users/"+uid);
+    setStatus("กำลังซิงก์…");
+    const snap=await c.limit(500).get();
+    const untouched=m=>!m.events.length&&!m.title&&m.teams.every(t=>t.players.every(p=>!p.name));
+    const remote={};snap.docs.forEach(d=>remote[d.id]=JSON.parse(JSON.stringify(d.data())));
+    for(const [id,r] of Object.entries(remote))if(!matches[id]||r.updated>matches[id].updated)matches[id]=r;
+    // drop the blank starter match when saved ones exist
+    if(snap.size&&!remote[cur]&&untouched(M())){delete matches[cur];cur=Object.keys(remote).sort().pop()}
+    for(const [id,m] of Object.entries(matches))if(!untouched(m)&&(!remote[id]||m.updated>remote[id].updated))dirty.add(id);
+    col=c;writeLocal();
+    if(!document.activeElement?.dataset?.f)render();
+    setStatus("ซิงก์แล้ว");if(dirty.size)flush();
+  }catch(e){setStatus("บันทึกในเครื่องนี้")}
+})();
+</script>
